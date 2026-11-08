@@ -321,6 +321,7 @@ Body:
   "deviceId": "esp32-freshsense-1",
   "temperature": 24,
   "humidity": 40,
+  "ethylenePpm": 0.5,
   "time": "21/06/2026 10:48",
   "id": "34c0c05ad9f7e4397335"
 }
@@ -331,6 +332,7 @@ Body:
 | `deviceId`    | Si          | Identifica el sensor; debe coincidir con el registrado.      |
 | `temperature` | Si          | Numero (°C).                                                 |
 | `humidity`    | Si          | Numero (%).                                                  |
+| `ethylenePpm` | Si          | Numero (ppm). Nivel de etileno medido por el sensor de gas. Se guarda como `ethyleneLevel` (columna `ethylene_level`). |
 | `time`        | No          | Formato **`dd/MM/yyyy HH:mm`**. Si falta o es invalido, se usa la hora actual. |
 | `id`          | No          | Identificador de la lectura generado en el Edge.            |
 
@@ -338,6 +340,7 @@ Body:
 
 **Respuestas:**
 - `201` — lectura guardada (devuelve el JSON de la lectura).
+- `400` — falta un campo obligatorio (por ejemplo `ethylenePpm`) o el JSON es invalido.
 - `401 "Dispositivo no autorizado"` — `deviceId` o `X-Device-Key` incorrectos.
 
 **Ejemplo con curl:**
@@ -345,10 +348,12 @@ Body:
 curl -X POST http://localhost:8080/api/edge/readings \
   -H "Content-Type: application/json" \
   -H "X-Device-Key: <tu-clave>" \
-  -d '{ "deviceId":"esp32-freshsense-1","temperature":24,"humidity":40,"time":"21/06/2026 10:48","id":"34c0c05ad9f7e4397335" }'
+  -d '{ "deviceId":"esp32-freshsense-1","temperature":24,"humidity":40,"ethylenePpm":0.5,"time":"21/06/2026 10:48","id":"34c0c05ad9f7e4397335" }'
 ```
 
 > URL segun despliegue: en local con Docker desde la misma maquina usa `http://localhost:8080/...`; si el ESP32 esta en otro equipo de la red, usa la IP del servidor (ej. `http://192.168.1.50:8080/...`); detras de Nginx tambien sirve `http://localhost/api/edge/readings`.
+
+**Gas (etileno):** el sensor de gas del ESP32 mide el etileno, el Edge lo valida y lo reenvia como `ethylenePpm`, y el backend lo persiste en `ethylene_level` de la lectura. Se devuelve como `ethyleneLevel` en `/api/monitoring`. Un Edge antiguo que no envie `ethylenePpm` recibira `400`.
 
 Las lecturas entrantes se ven en la vista **Monitoreo** y alimentan el semaforo de frescura del inventario (comparando contra los umbrales de `/api/thresholds`).
 
