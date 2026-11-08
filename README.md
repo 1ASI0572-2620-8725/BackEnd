@@ -472,8 +472,8 @@ La infraestructura de produccion corre en **Azure Container Apps** con imagen en
 
 | Servicio | URL |
 |----------|-----|
-| API REST (monolito) | `https://freshsense-backend.mangoground-03a86fb8.eastus.azurecontainerapps.io` |
-| Swagger UI | `https://freshsense-backend.mangoground-03a86fb8.eastus.azurecontainerapps.io/swagger-ui/index.html` |
+| API REST (monolito) | `https://137-131-253-18.sslip.io` |
+| Swagger UI | `https://137-131-253-18.sslip.io/swagger-ui/index.html` |
 | Eureka Server | interno (`http://eureka-server`) — sin ingress externo |
 | Alerts Service | interno — solo accesible via Feign desde el monolito |
 | Recipes Service | interno — solo accesible via Feign desde el monolito |
