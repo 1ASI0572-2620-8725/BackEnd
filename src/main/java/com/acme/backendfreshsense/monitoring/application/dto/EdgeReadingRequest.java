@@ -18,6 +18,10 @@ public record EdgeReadingRequest(
         @NotNull
         Double humidity,
 
+        @Schema(description = "Nivel de etileno en ppm medido por el sensor de gas del dispositivo", example = "0.5", requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotNull
+        Double ethylenePpm,
+
         @Schema(description = "Marca de tiempo de la lectura en el Edge", example = "21/06/2026 10:48")
         String time,
 

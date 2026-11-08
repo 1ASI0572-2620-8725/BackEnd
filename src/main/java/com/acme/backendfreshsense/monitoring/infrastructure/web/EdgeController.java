@@ -44,7 +44,7 @@ public class EdgeController {
     }
 
     @Operation(summary = "Recibir una lectura del Edge",
-            description = "Recibe temperatura y humedad de un dispositivo IoT. Requiere cabecera X-Device-Key válida. " +
+            description = "Recibe temperatura, humedad y etileno de un dispositivo IoT. Requiere cabecera X-Device-Key válida. " +
                           "El campo 'id' es el identificador de la lectura generado en el Edge; 'deviceId' identifica al sensor.")
     @PostMapping("/readings")
     public ResponseEntity<MonitoringReadingDto> ingest(
@@ -59,7 +59,7 @@ public class EdgeController {
         LocalDateTime recordedAt = parseTime(request.time());
         MonitoringReadingDto saved = monitoringService.saveFromEdge(
                 device.getUserId(), request.deviceId(), request.id(),
-                request.temperature(), request.humidity(), recordedAt,
+                request.temperature(), request.humidity(), request.ethylenePpm(), recordedAt,
                 request.status(), request.category());
         return ResponseEntity.status(HttpStatus.CREATED).body(saved);
     }

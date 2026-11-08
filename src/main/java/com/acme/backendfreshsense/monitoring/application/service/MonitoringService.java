@@ -33,17 +33,18 @@ public class MonitoringService {
 
     /**
      * Guarda una lectura proveniente del Edge (dispositivo IoT físico).
-     * El dispositivo solo reporta temperatura y humedad; el resto de campos quedan nulos.
+     * El dispositivo reporta temperatura, humedad y etileno; el resto de campos quedan nulos.
      */
     public MonitoringReadingDto saveFromEdge(Long userId, String deviceId, String externalId,
-                                             Double temperature, Double humidity, LocalDateTime recordedAt,
-                                             String status, String category) {
+                                             Double temperature, Double humidity, Double ethyleneLevel,
+                                             LocalDateTime recordedAt, String status, String category) {
         MonitoringReading reading = MonitoringReading.builder()
                 .userId(userId)
                 .deviceId(deviceId)
                 .externalId(externalId)
                 .temperature(temperature)
                 .humidity(humidity)
+                .ethyleneLevel(ethyleneLevel)
                 .recordedAt(recordedAt != null ? recordedAt : LocalDateTime.now())
                 .status(status)
                 .category(category)
