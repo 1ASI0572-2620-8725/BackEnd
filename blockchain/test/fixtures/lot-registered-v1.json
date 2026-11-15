@@ -1,0 +1,4 @@
+{
+  "sha256": "8bbc3d695b6015470f21dffbea94b86457cf81782a8095225678dcdad7fea9c8",
+  "canonicalSnapshot": "{\"businessEventId\":\"00000000-0000-0000-0000-000000000003\",\"createdAt\":\"2026-11-15T12:00:00.123456Z\",\"domain\":\"freshsense.trace.lot-registered\",\"eventType\":\"LOT_REGISTERED\",\"evidenceId\":\"00000000-0000-0000-0000-000000000002\",\"expiresOn\":null,\"initialQuantity\":\"12.340\",\"lotCode\":\"MANZANA-1\",\"lotId\":\"00000000-0000-0000-0000-000000000001\",\"lotStatus\":\"REGISTERED\",\"ownerId\":\"9007199254740993\",\"productCategory\":\"Frutas\",\"productId\":\"7\",\"productName\":\"Manzana Ñ\",\"receivedAt\":\"2026-11-15T11:10:00.000000Z\",\"schemaVersion\":1,\"source\":\"AUTHENTICATED_USER\",\"unit\":\"KG\"}"
+}

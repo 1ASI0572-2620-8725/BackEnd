@@ -1,0 +1,27 @@
+{
+  "name": "freshsense-blockchain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "hardhat build",
+    "typecheck": "tsc --noEmit",
+    "test": "hardhat test nodejs",
+    "node:local": "hardhat node --network freshsenseLocal --hostname 127.0.0.1 --port 8545",
+    "anchor:local": "hardhat run scripts/anchor-local.ts --network localhost",
+    "verify:rpc": "node --experimental-strip-types scripts/verify-rpc.ts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-node-test-runner": "3.1.2",
+    "@nomicfoundation/hardhat-viem": "3.1.0",
+    "@openzeppelin/contracts": "5.6.1",
+    "@types/node": "22.15.3",
+    "hardhat": "3.22.0",
+    "solc": "0.8.38",
+    "typescript": "5.9.3",
+    "viem": "2.47.6"
+  }
+}
