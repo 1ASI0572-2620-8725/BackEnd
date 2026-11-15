@@ -4,6 +4,8 @@ import com.acme.backendfreshsense.inventory.domain.model.entities.Product;
 import com.acme.backendfreshsense.inventory.domain.repository.ProductRepository;
 import com.acme.backendfreshsense.inventory.infrastructure.persistence.jpa.ProductEntity;
 import com.acme.backendfreshsense.inventory.infrastructure.persistence.jpa.ProductJpaRepository;
+import com.acme.backendfreshsense.shared.infrastructure.persistence.DatabaseConstraints;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.util.List;
 import java.util.Optional;
@@ -62,5 +64,13 @@ public class ProductRepositoryAdapter implements ProductRepository {
     @Override
     public void deleteById(Long id) {
         jpa.deleteById(id);
+        try {
+            jpa.flush();
+        } catch (DataIntegrityViolationException e) {
+            if (DatabaseConstraints.matches(e, "fk_trace_lot_product")) {
+                throw new IllegalStateException("El producto tiene lotes de trazabilidad y no se puede eliminar", e);
+            }
+            throw e;
+        }
     }
 }
