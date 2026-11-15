@@ -10,6 +10,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class JwtService {
@@ -38,10 +39,11 @@ public class JwtService {
                 .compact();
     }
 
-    /** Refresh token largo (7 días por defecto), solo subject y type. */
+    /** Refresh token largo (7 días por defecto) con un identificador por emisión. */
     public String generateRefreshToken(String email, Long userId) {
         return Jwts.builder()
                 .subject(email)
+                .id(UUID.randomUUID().toString())
                 .claims(Map.of("userId", userId, "type", "refresh"))
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + refreshExpirationMs))
