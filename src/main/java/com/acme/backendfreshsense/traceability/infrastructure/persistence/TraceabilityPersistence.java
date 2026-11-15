@@ -8,6 +8,7 @@ import com.acme.backendfreshsense.traceability.domain.LotDeviceAssignment;
 import com.acme.backendfreshsense.traceability.domain.TraceEvidence;
 import com.acme.backendfreshsense.traceability.domain.TraceabilityConflictException;
 import com.acme.backendfreshsense.traceability.domain.TraceabilityRepository;
+import com.acme.backendfreshsense.traceability.infrastructure.blockchain.BlockchainSettings;
 import jakarta.persistence.EntityManager;
 import org.springframework.stereotype.Repository;
 
@@ -22,13 +23,16 @@ class TraceabilityPersistence implements TraceabilityRepository {
     private final FoodLotJpaRepository lots;
     private final LotDeviceAssignmentJpaRepository assignments;
     private final TraceEvidenceJpaRepository evidences;
+    private final BlockchainSettings blockchain;
 
     TraceabilityPersistence(EntityManager entities, FoodLotJpaRepository lots,
-                            LotDeviceAssignmentJpaRepository assignments, TraceEvidenceJpaRepository evidences) {
+                            LotDeviceAssignmentJpaRepository assignments, TraceEvidenceJpaRepository evidences,
+                            BlockchainSettings blockchain) {
         this.entities = entities;
         this.lots = lots;
         this.assignments = assignments;
         this.evidences = evidences;
+        this.blockchain = blockchain;
     }
 
     @Override
@@ -50,7 +54,9 @@ class TraceabilityPersistence implements TraceabilityRepository {
 
     @Override
     public void insertEvidence(TraceEvidence evidence) {
-        entities.persist(new TraceEvidenceEntity(evidence, entities.getReference(FoodLotEntity.class, evidence.lotId())));
+        var row = new TraceEvidenceEntity(evidence, entities.getReference(FoodLotEntity.class, evidence.lotId()));
+        entities.persist(row);
+        entities.persist(new EvidenceOutboxEntity(row, blockchain.target(), evidence.createdAt()));
     }
 
     @Override
@@ -108,6 +114,11 @@ class TraceabilityPersistence implements TraceabilityRepository {
     public List<LotDeviceAssignment> findAssignments(UUID lotId, long ownerId) {
         return assignments.findByLot_IdAndOwnerIdOrderByStartedAtAscIdAsc(lotId, ownerId)
                 .stream().map(LotDeviceAssignmentEntity::toDomain).toList();
+    }
+
+    @Override
+    public Optional<LotDeviceAssignment> findAssignmentAt(long ownerId, long deviceKey, Instant measuredAt) {
+        return assignments.findAt(ownerId, deviceKey, measuredAt).map(LotDeviceAssignmentEntity::toDomain);
     }
 
     @Override

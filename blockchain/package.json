@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "hardhat test nodejs",
     "node:local": "hardhat node --network freshsenseLocal --hostname 127.0.0.1 --port 8545",
+    "deploy:backend": "hardhat run scripts/deploy-for-backend.ts --network localhost",
     "anchor:local": "hardhat run scripts/anchor-local.ts --network localhost",
     "verify:rpc": "node --experimental-strip-types scripts/verify-rpc.ts"
   },

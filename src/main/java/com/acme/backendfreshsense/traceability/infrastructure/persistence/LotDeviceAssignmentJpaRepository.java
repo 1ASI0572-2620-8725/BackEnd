@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -30,4 +31,11 @@ interface LotDeviceAssignmentJpaRepository extends JpaRepository<LotDeviceAssign
                                                      @Param("ownerId") long ownerId);
 
     List<LotDeviceAssignmentEntity> findByLot_IdAndOwnerIdOrderByStartedAtAscIdAsc(UUID lotId, long ownerId);
+
+    @Query("""
+            select a from LotDeviceAssignmentEntity a
+            where a.ownerId = :ownerId and a.lot.ownerId = :ownerId and a.device.id = :deviceKey
+              and a.startedAt <= :measuredAt and (a.endedAt is null or a.endedAt > :measuredAt)
+            """)
+    Optional<LotDeviceAssignmentEntity> findAt(long ownerId, long deviceKey, Instant measuredAt);
 }

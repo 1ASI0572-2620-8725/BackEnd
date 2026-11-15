@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static com.acme.backendfreshsense.traceability.application.EvidenceCodec.LotRegisteredSnapshot;
@@ -89,6 +90,11 @@ public class TraceabilityService {
     public List<LotDeviceAssignment> assignments(long ownerId, UUID lotId) {
         lot(ownerId, lotId);
         return records.findAssignments(lotId, ownerId);
+    }
+
+    /** El futuro consumidor de Monitoring debe usar la identidad autenticada y el instante medido persistido. */
+    public Optional<LotDeviceAssignment> assignmentAt(long ownerId, long deviceKey, Instant measuredAt) {
+        return records.findAssignmentAt(ownerId, deviceKey, measuredAt.truncatedTo(ChronoUnit.MICROS));
     }
 
     public List<TraceEvidence> evidences(long ownerId, UUID lotId) {

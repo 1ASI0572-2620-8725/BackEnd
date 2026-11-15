@@ -7,6 +7,7 @@ import com.acme.backendfreshsense.traceability.domain.FoodLot;
 import com.acme.backendfreshsense.traceability.domain.LotDeviceAssignment;
 import com.acme.backendfreshsense.traceability.domain.TraceEvidence;
 import com.acme.backendfreshsense.traceability.domain.TraceabilityConflictException;
+import com.acme.backendfreshsense.traceability.infrastructure.blockchain.AnchoringQuery;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -30,9 +31,11 @@ import java.util.UUID;
 public class TraceabilityController {
     private static final String LOCAL_STATUS = "LOCAL_PENDING_BLOCKCHAIN";
     private final TraceabilityService traceability;
+    private final AnchoringQuery anchoring;
 
-    public TraceabilityController(TraceabilityService traceability) {
+    public TraceabilityController(TraceabilityService traceability, AnchoringQuery anchoring) {
         this.traceability = traceability;
+        this.anchoring = anchoring;
     }
 
     public record RegisterLotRequest(@NotBlank @Size(max = 64) String code,
@@ -126,6 +129,11 @@ public class TraceabilityController {
     public VerificationResponse verify(@PathVariable String evidenceId) {
         UUID id = UUID.fromString(evidenceId);
         return new VerificationResponse(id, traceability.verify(CurrentUser.id(), id), LOCAL_STATUS);
+    }
+
+    @GetMapping("/evidences/{evidenceId}/anchoring")
+    public AnchoringQuery.Response anchoring(@PathVariable UUID evidenceId) {
+        return anchoring.owned(CurrentUser.id(), evidenceId);
     }
 
     private static long writeUser(String authorization) {

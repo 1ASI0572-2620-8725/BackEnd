@@ -11,6 +11,7 @@ import com.acme.backendfreshsense.traceability.domain.FoodLot;
 import com.acme.backendfreshsense.traceability.domain.TraceabilityRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -33,6 +35,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -57,6 +60,8 @@ class TraceabilityIntegrationTest {
     @Autowired DeviceService devices;
     @Autowired TraceabilityService traceability;
     @Autowired JdbcTemplate jdbc;
+    @Autowired EntityManager entityManager;
+    @Autowired TransactionTemplate transactions;
     @MockitoSpyBean TraceabilityRepository records;
 
     private User owner;
@@ -90,9 +95,15 @@ class TraceabilityIntegrationTest {
         mvc.perform(get(LOTS).header(AUTHORIZATION, outsider.bearer()))
                 .andExpect(status().isOk()).andExpect(content().json("[]"));
         for (String path : List.of(LOTS + "/" + id, LOTS + "/" + id + "/assignments",
-                LOTS + "/" + id + "/evidences", EVIDENCE + evidenceId, EVIDENCE + evidenceId + "/verify")) {
+                LOTS + "/" + id + "/evidences", EVIDENCE + evidenceId, EVIDENCE + evidenceId + "/verify",
+                EVIDENCE + evidenceId + "/anchoring")) {
             mvc.perform(get(path).header(AUTHORIZATION, outsider.bearer())).andExpect(status().isNotFound());
         }
+        mvc.perform(get(EVIDENCE + evidenceId + "/anchoring")).andExpect(status().isUnauthorized());
+        mvc.perform(get(EVIDENCE + evidenceId + "/anchoring").header(AUTHORIZATION, owner.bearer()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.publicationStatus").value("PENDING"))
+                .andExpect(jsonPath("$.localMatches").value(true))
+                .andExpect(jsonPath("$.blockchainVerification").value("DISABLED"));
         mvc.perform(get(LOTS + "/" + UUID.randomUUID()).header(AUTHORIZATION, owner.bearer()))
                 .andExpect(status().isNotFound());
         mvc.perform(get(LOTS + "/malformed").header(AUTHORIZATION, owner.bearer()))
@@ -220,6 +231,28 @@ class TraceabilityIntegrationTest {
     }
 
     @Test
+    void resolvesADeviceAssignmentByMeasurementTimeAndOwner() {
+        var lot = traceability.register(owner.id(), productId, "TEMPORAL", BigDecimal.ONE,
+                FoodLot.Unit.KG, Instant.parse(RECEIVED_AT), null);
+        String device = device(owner);
+        var open = traceability.assign(owner.id(), lot.id(), device);
+        assertThat(traceability.assignmentAt(owner.id(), open.deviceKey(), open.startedAt().minusNanos(1))).isEmpty();
+        assertThat(traceability.assignmentAt(owner.id(), open.deviceKey(), open.startedAt())).contains(open);
+        assertThat(traceability.assignmentAt(outsider.id(), open.deviceKey(), open.startedAt())).isEmpty();
+        assertThat(traceability.assignmentAt(owner.id(), Long.MAX_VALUE, open.startedAt())).isEmpty();
+
+        var closed = traceability.close(owner.id(), lot.id(), open.id());
+        assertThat(traceability.assignmentAt(owner.id(), open.deviceKey(), closed.endedAt().minusNanos(1))).contains(closed);
+        assertThat(traceability.assignmentAt(owner.id(), open.deviceKey(), closed.endedAt())).isEmpty();
+
+        var nextLot = traceability.register(owner.id(), productId, "TEMPORAL-2", BigDecimal.ONE,
+                FoodLot.Unit.KG, Instant.parse(RECEIVED_AT), null);
+        var next = traceability.assign(owner.id(), nextLot.id(), device);
+        assertThat(traceability.assignmentAt(owner.id(), open.deviceKey(), next.startedAt())).contains(next);
+        assertThat(traceability.assignmentAt(owner.id(), open.deviceKey(), closed.startedAt())).contains(closed);
+    }
+
+    @Test
     void rollsBackFlushedLotWhenInitialEvidenceCannotBeWritten() {
         doThrow(new DataIntegrityViolationException("Fallo simulado al guardar evidencia")).when(records).insertEvidence(any());
         assertThatThrownBy(() -> traceability.register(owner.id(), productId, "ROLLBACK", BigDecimal.ONE,
@@ -235,7 +268,8 @@ class TraceabilityIntegrationTest {
         Integer linked = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM trace_food_lots l JOIN trace_evidences e
                   ON l.id = e.lot_id AND l.initial_evidence_id = e.id
-                WHERE l.owner_id = ? AND l.code = ?
+                JOIN trace_evidence_outbox o ON o.evidence_id = e.id
+                WHERE l.owner_id = ? AND l.code = ? AND o.status = 'PENDING' AND o.attempts = 0
                 """, Integer.class, owner.id(), "PERSISTED");
         assertThat(linked).isEqualTo(1);
         assertThatThrownBy(() -> jdbc.update("""
@@ -245,6 +279,30 @@ class TraceabilityIntegrationTest {
                 UPDATE trace_food_lots SET initial_quantity = 0 WHERE owner_id = ? AND code = 'PERSISTED'
                 """, owner.id())).hasRootCauseInstanceOf(java.sql.SQLException.class)
                 .hasMessageContaining("ck_trace_lot_quantity");
+    }
+
+    @Test
+    void rollsBackLotEvidenceAndOutboxWhenMysqlRejectsAnOutboxWrite() {
+        var created = new AtomicReference<FoodLot>();
+        assertThatThrownBy(() -> transactions.executeWithoutResult(transaction -> {
+            var lot = traceability.register(owner.id(), productId, "OUTBOX-ROLLBACK", BigDecimal.ONE,
+                    FoodLot.Unit.KG, Instant.parse(RECEIVED_AT), null);
+            created.set(lot);
+            entityManager.flush();
+            jdbc.update("""
+                    INSERT INTO trace_evidence_outbox (evidence_id, version, status, attempts)
+                    SELECT evidence_id, version, status, attempts
+                    FROM trace_evidence_outbox WHERE evidence_id = UUID_TO_BIN(?)
+                    """, lot.initialEvidenceId().toString());
+        })).isInstanceOf(DataIntegrityViolationException.class);
+        var lot = created.get();
+        assertThat(lot).isNotNull();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trace_food_lots WHERE id = UUID_TO_BIN(?)",
+                Integer.class, lot.id().toString())).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trace_evidences WHERE id = UUID_TO_BIN(?)",
+                Integer.class, lot.initialEvidenceId().toString())).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM trace_evidence_outbox WHERE evidence_id = UUID_TO_BIN(?)",
+                Integer.class, lot.initialEvidenceId().toString())).isZero();
     }
 
     private User newUser() {

@@ -18,6 +18,7 @@ public interface TraceabilityRepository {
     Optional<LotDeviceAssignment> findAssignmentForUpdate(UUID id, UUID lotId, long ownerId);
     void closeAssignment(LotDeviceAssignment assignment);
     List<LotDeviceAssignment> findAssignments(UUID lotId, long ownerId);
+    Optional<LotDeviceAssignment> findAssignmentAt(long ownerId, long deviceKey, Instant measuredAt);
 
     List<TraceEvidence> findEvidences(UUID lotId, long ownerId);
     Optional<TraceEvidence> findEvidence(UUID id, long ownerId);
