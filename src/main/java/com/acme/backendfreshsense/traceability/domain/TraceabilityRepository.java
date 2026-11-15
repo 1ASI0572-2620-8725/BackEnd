@@ -22,4 +22,5 @@ public interface TraceabilityRepository {
 
     List<TraceEvidence> findEvidences(UUID lotId, long ownerId);
     Optional<TraceEvidence> findEvidence(UUID id, long ownerId);
+    Optional<TraceEvidence> findEvidenceForReading(long readingId);
 }

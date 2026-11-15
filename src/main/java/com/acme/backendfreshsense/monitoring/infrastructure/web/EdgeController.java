@@ -5,20 +5,16 @@ import com.acme.backendfreshsense.monitoring.application.dto.ClaimResponse;
 import com.acme.backendfreshsense.monitoring.application.dto.EdgeReadingRequest;
 import com.acme.backendfreshsense.monitoring.application.dto.MonitoringReadingDto;
 import com.acme.backendfreshsense.monitoring.application.service.DeviceService;
-import com.acme.backendfreshsense.monitoring.application.service.MonitoringService;
+import com.acme.backendfreshsense.monitoring.application.service.SensorIngestion;
 import com.acme.backendfreshsense.monitoring.domain.model.Device;
+import com.acme.backendfreshsense.monitoring.infrastructure.persistence.jpa.SensorObservation.Source;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 
 /**
  * Punto de entrada para el Edge/IoT. El dispositivo físico (ESP32) envía aquí sus lecturas.
@@ -32,15 +28,12 @@ import java.time.format.DateTimeFormatter;
 @RequestMapping("/api/edge")
 public class EdgeController {
 
-    private static final Logger log = LoggerFactory.getLogger(EdgeController.class);
-    private static final DateTimeFormatter EDGE_TIME = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-
     private final DeviceService deviceService;
-    private final MonitoringService monitoringService;
+    private final SensorIngestion ingress;
 
-    public EdgeController(DeviceService deviceService, MonitoringService monitoringService) {
+    public EdgeController(DeviceService deviceService, SensorIngestion ingress) {
         this.deviceService = deviceService;
-        this.monitoringService = monitoringService;
+        this.ingress = ingress;
     }
 
     @Operation(summary = "Recibir una lectura del Edge",
@@ -56,12 +49,11 @@ public class EdgeController {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Dispositivo no autorizado");
         }
 
-        LocalDateTime recordedAt = parseTime(request.time());
-        MonitoringReadingDto saved = monitoringService.saveFromEdge(
-                device.getUserId(), request.deviceId(), request.id(),
-                request.temperature(), request.humidity(), request.ethylenePpm(), recordedAt,
-                request.status(), request.category());
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        var result = ingress.ingest(device.getUserId(), device.getId(), device.getDeviceId(),
+                new SensorIngestion.Sample(request.id(), request.time(), request.temperature(), request.humidity(),
+                        request.ethylenePpm(), request.status(), request.category(), null, null, null,
+                        Source.LEGACY_DEVICE, null));
+        return ResponseEntity.status(result.duplicate() ? HttpStatus.OK : HttpStatus.CREATED).body(result.reading());
     }
 
     @Operation(summary = "Canjear un código de emparejamiento",
@@ -72,13 +64,4 @@ public class EdgeController {
         return ResponseEntity.ok(deviceService.claim(request.code()));
     }
 
-    private LocalDateTime parseTime(String time) {
-        if (time == null || time.isBlank()) return LocalDateTime.now();
-        try {
-            return LocalDateTime.parse(time.trim(), EDGE_TIME);
-        } catch (Exception e) {
-            log.warn("Formato de 'time' no válido ({}), se usa la hora actual. Esperado dd/MM/yyyy HH:mm", time);
-            return LocalDateTime.now();
-        }
-    }
 }

@@ -41,7 +41,7 @@ import static org.web3j.protocol.core.DefaultBlockParameterName.LATEST;
 import static org.web3j.protocol.core.DefaultBlockParameterName.PENDING;
 
 public class Web3jEvidenceChain implements AutoCloseable {
-    record Deployment(Target target, BigInteger firstBlock) {}
+    record Deployment(Target target, BigInteger firstBlock, boolean supportsTemperature) {}
     record OnChain(boolean exists, boolean digestMatches, boolean metadataMatches) {
         boolean matches() { return exists && digestMatches && metadataMatches; }
     }
@@ -65,14 +65,16 @@ public class Web3jEvidenceChain implements AutoCloseable {
         }
         String code = send(rpc.ethGetCode(target.contract(), LATEST)).getCode();
         if (code == null || code.equals("0x")) throw new ChainProblem(CONTRACT_MISSING);
-        if (!FreshSenseContractAbi.RUNTIME_CODE_HASH.equalsIgnoreCase(Hash.sha3(code))) {
+        String codeHash = Hash.sha3(code);
+        boolean upgraded = FreshSenseContractAbi.RUNTIME_CODE_HASH.equalsIgnoreCase(codeHash);
+        if (!upgraded && !FreshSenseContractAbi.LEGACY_RUNTIME_CODE_HASH.equalsIgnoreCase(codeHash)) {
             throw new ChainProblem(CONTRACT_INCOMPATIBLE);
         }
         var receipt = receipt(target.deploymentTransaction()).orElseThrow(() -> new ChainProblem(DEPLOYMENT_MISSING));
         if (!successful(receipt) || !target.contract().equalsIgnoreCase(receipt.getContractAddress())) {
             throw new ChainProblem(CONTRACT_INCOMPATIBLE);
         }
-        return new Deployment(target, receipt.getBlockNumber());
+        return new Deployment(target, receipt.getBlockNumber(), upgraded);
     }
 
     OnChain lookup(Deployment deployment, TraceEvidence evidence) {
@@ -93,6 +95,9 @@ public class Web3jEvidenceChain implements AutoCloseable {
     }
 
     Signed prepare(Deployment deployment, TraceEvidence evidence) {
+        if (evidence.type() == TraceEvidence.Type.CRITICAL_TEMPERATURE && !deployment.supportsTemperature()) {
+            throw new ChainProblem(CONTRACT_INCOMPATIBLE);
+        }
         var target = deployment.target();
         var role = (Bytes32) call(target.contract(), FreshSenseContractAbi.writerRole(), LATEST).get(0);
         var permitted = (Bool) call(target.contract(), FreshSenseContractAbi.hasRole(role, writer.getAddress()), LATEST).get(0);

@@ -8,5 +8,6 @@ import java.util.UUID;
 
 interface TraceEvidenceJpaRepository extends JpaRepository<TraceEvidenceEntity, UUID> {
     Optional<TraceEvidenceEntity> findByIdAndLot_OwnerId(UUID id, long ownerId);
+    Optional<TraceEvidenceEntity> findByObservation_Id(long readingId);
     List<TraceEvidenceEntity> findByLot_IdAndLot_OwnerIdOrderByCreatedAtAscIdAsc(UUID lotId, long ownerId);
 }

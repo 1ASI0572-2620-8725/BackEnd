@@ -31,6 +31,15 @@ public class CanonicalEvidenceCodec implements EvidenceCodec {
 
     @Override
     public String encode(LotRegisteredSnapshot snapshot) {
+        return canonical(snapshot);
+    }
+
+    @Override
+    public String encode(CriticalTemperatureSnapshot snapshot) {
+        return canonical(snapshot);
+    }
+
+    private String canonical(Object snapshot) {
         try {
             String encoded = json.writeValueAsString(snapshot);
             if (!StandardCharsets.UTF_8.newEncoder().canEncode(encoded)) {

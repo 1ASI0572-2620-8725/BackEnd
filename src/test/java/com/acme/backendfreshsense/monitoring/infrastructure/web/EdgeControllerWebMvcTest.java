@@ -3,7 +3,8 @@ package com.acme.backendfreshsense.monitoring.infrastructure.web;
 import com.acme.backendfreshsense.monitoring.application.dto.ClaimResponse;
 import com.acme.backendfreshsense.monitoring.application.dto.MonitoringReadingDto;
 import com.acme.backendfreshsense.monitoring.application.service.DeviceService;
-import com.acme.backendfreshsense.monitoring.application.service.MonitoringService;
+import com.acme.backendfreshsense.monitoring.application.service.SensorIngestion;
+import com.acme.backendfreshsense.monitoring.infrastructure.persistence.jpa.SensorObservation.Source;
 import com.acme.backendfreshsense.monitoring.domain.model.Device;
 import com.acme.backendfreshsense.shared.infrastructure.security.JwtService;
 import com.acme.backendfreshsense.shared.infrastructure.security.OAuth2SuccessHandler;
@@ -40,7 +41,7 @@ class EdgeControllerWebMvcTest {
     private DeviceService deviceService;
 
     @MockBean
-    private MonitoringService monitoringService;
+    private SensorIngestion ingress;
 
     @MockBean
     private JwtService jwtService;
@@ -55,15 +56,14 @@ class EdgeControllerWebMvcTest {
     @DisplayName("POST /api/edge/readings acepta lectura autenticada y responde 201")
     void ingestAuthorizedReadingReturnsCreated() throws Exception {
         Device device = new Device();
+        device.setId(11L);
         device.setUserId(10L);
         device.setDeviceId("esp32-freshsense-1");
 
         when(deviceService.authenticate("esp32-freshsense-1", "secret-ok")).thenReturn(device);
-        when(monitoringService.saveFromEdge(
-                eq(10L), eq("esp32-freshsense-1"), eq("reading-001"),
-                eq(6.4), eq(92.0), eq(0.5), any(LocalDateTime.class),
-                eq("GREEN"), eq("Frutas")
-        )).thenReturn(new MonitoringReadingDto(
+        when(ingress.ingest(10L, 11L, "esp32-freshsense-1", new SensorIngestion.Sample(
+                "reading-001", "28/10/2026 23:40", 6.4, 92.0, 0.5, "GREEN", "Frutas",
+                null, null, null, Source.LEGACY_DEVICE, null))).thenReturn(new SensorIngestion.Result(new MonitoringReadingDto(
                 1L,
                 6.4,
                 92.0,
@@ -75,7 +75,7 @@ class EdgeControllerWebMvcTest {
                 "esp32-freshsense-1",
                 "GREEN",
                 "Frutas"
-        ));
+        ), null, null, null, Source.LEGACY_DEVICE, false, null));
 
         String body = """
                 {
@@ -208,15 +208,14 @@ class EdgeControllerWebMvcTest {
     @DisplayName("POST /api/edge/readings guarda lectura ROJA autenticada")
     void ingestAuthorizedRedReadingReturnsCreated() throws Exception {
         Device device = new Device();
+        device.setId(11L);
         device.setUserId(10L);
         device.setDeviceId("esp32-freshsense-1");
 
         when(deviceService.authenticate("esp32-freshsense-1", "secret-ok")).thenReturn(device);
-        when(monitoringService.saveFromEdge(
-                eq(10L), eq("esp32-freshsense-1"), eq("reading-red"),
-                eq(24.0), eq(40.0), eq(8.0), any(LocalDateTime.class),
-                eq("RED"), eq("Frutas")
-        )).thenReturn(new MonitoringReadingDto(
+        when(ingress.ingest(10L, 11L, "esp32-freshsense-1", new SensorIngestion.Sample(
+                "reading-red", "28/10/2026 23:45", 24.0, 40.0, 8.0, "RED", "Frutas",
+                null, null, null, Source.LEGACY_DEVICE, null))).thenReturn(new SensorIngestion.Result(new MonitoringReadingDto(
                 2L,
                 24.0,
                 40.0,
@@ -228,7 +227,7 @@ class EdgeControllerWebMvcTest {
                 "esp32-freshsense-1",
                 "RED",
                 "Frutas"
-        ));
+        ), null, null, null, Source.LEGACY_DEVICE, false, null));
 
         String body = """
                 {

@@ -16,7 +16,8 @@ import java.util.UUID;
 
 final class FreshSenseContractAbi {
     // Read from the Hardhat FreshSenseTraceability artifact, solc 0.8.38, Cancun.
-    static final String RUNTIME_CODE_HASH = "0xc2294d6220a230d3fa4742d61c6060bb8a62405ddb5e29ac651369bf08c62d0a";
+    static final String LEGACY_RUNTIME_CODE_HASH = "0xc2294d6220a230d3fa4742d61c6060bb8a62405ddb5e29ac651369bf08c62d0a";
+    static final String RUNTIME_CODE_HASH = "0x160c39c5e2fc727c0580c42c51d536834e9db6833cb9edf2086fcf55065a83a6";
     static final String RECORDED_TOPIC = EventEncoder.encode(new Event("EvidenceRecorded", List.of(
             new TypeReference<Bytes16>(true) {}, new TypeReference<Bytes16>(true) {},
             new TypeReference<Bytes32>() {}, new TypeReference<Uint8>() {}, new TypeReference<Uint32>() {})));
@@ -41,6 +42,7 @@ final class FreshSenseContractAbi {
     static Uint8 eventType(TraceEvidence evidence) {
         return switch (evidence.type()) {
             case LOT_REGISTERED -> new Uint8(1);
+            case CRITICAL_TEMPERATURE -> new Uint8(2);
         };
     }
 

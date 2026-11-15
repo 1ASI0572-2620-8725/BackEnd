@@ -57,7 +57,7 @@ class EvidencePublisherIntegrationTest {
                 UUID.randomUUID().toString().replace("-", "").repeat(2),
                 Duration.ofSeconds(1), Duration.ofSeconds(2), Duration.ofSeconds(60));
         chain = mock(Web3jEvidenceChain.class);
-        deployment = new Web3jEvidenceChain.Deployment(settings.target(), BigInteger.ONE);
+        deployment = new Web3jEvidenceChain.Deployment(settings.target(), BigInteger.ONE, true);
         when(chain.deployment(settings.target())).thenReturn(deployment);
         var owner = accounts.register(new UserRegistrationRequest(
                 "outbox-" + unique + "@example.test", "Lab9-" + unique, "Prueba Outbox")).getId();

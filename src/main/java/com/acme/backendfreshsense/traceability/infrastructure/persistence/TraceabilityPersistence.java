@@ -2,6 +2,7 @@ package com.acme.backendfreshsense.traceability.infrastructure.persistence;
 
 import com.acme.backendfreshsense.inventory.infrastructure.persistence.jpa.ProductEntity;
 import com.acme.backendfreshsense.monitoring.infrastructure.persistence.jpa.DeviceEntity;
+import com.acme.backendfreshsense.monitoring.infrastructure.persistence.jpa.SensorObservation;
 import com.acme.backendfreshsense.shared.infrastructure.persistence.DatabaseConstraints;
 import com.acme.backendfreshsense.traceability.domain.FoodLot;
 import com.acme.backendfreshsense.traceability.domain.LotDeviceAssignment;
@@ -54,7 +55,8 @@ class TraceabilityPersistence implements TraceabilityRepository {
 
     @Override
     public void insertEvidence(TraceEvidence evidence) {
-        var row = new TraceEvidenceEntity(evidence, entities.getReference(FoodLotEntity.class, evidence.lotId()));
+        var observation = evidence.readingId() == null ? null : entities.getReference(SensorObservation.class, evidence.readingId());
+        var row = new TraceEvidenceEntity(evidence, entities.getReference(FoodLotEntity.class, evidence.lotId()), observation);
         entities.persist(row);
         entities.persist(new EvidenceOutboxEntity(row, blockchain.target(), evidence.createdAt()));
     }
@@ -130,5 +132,10 @@ class TraceabilityPersistence implements TraceabilityRepository {
     @Override
     public Optional<TraceEvidence> findEvidence(UUID id, long ownerId) {
         return evidences.findByIdAndLot_OwnerId(id, ownerId).map(TraceEvidenceEntity::toDomain);
+    }
+
+    @Override
+    public Optional<TraceEvidence> findEvidenceForReading(long readingId) {
+        return evidences.findByObservation_Id(readingId).map(TraceEvidenceEntity::toDomain);
     }
 }

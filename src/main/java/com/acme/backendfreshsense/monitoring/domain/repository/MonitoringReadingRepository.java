@@ -7,6 +7,7 @@ import java.util.Optional;
 
 public interface MonitoringReadingRepository {
     MonitoringReading save(MonitoringReading reading);
+    Optional<MonitoringReading> findById(long id);
     Optional<MonitoringReading> findLatest();
     Optional<MonitoringReading> findLatestByUser(Long userId);
     List<MonitoringReading> findAll();

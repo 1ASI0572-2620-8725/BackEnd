@@ -34,6 +34,13 @@ public interface EvidenceCodec {
     }
 
     String encode(LotRegisteredSnapshot snapshot);
+    String encode(CriticalTemperatureSnapshot snapshot);
     LotRegisteredSnapshot decode(String snapshot);
     String sha256(String canonicalSnapshot);
+
+    record CriticalTemperatureSnapshot(String domain, int schemaVersion, String evidenceId, String businessEventId,
+                                       String eventType, String readingId, String deviceId, String lotId,
+                                       String assignmentId, String temperatureC, String unit, String rule,
+                                       String ruleVersion, String direction, String thresholdC, String measuredAt,
+                                       String receivedAt, String source) {}
 }

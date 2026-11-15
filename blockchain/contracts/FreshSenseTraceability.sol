@@ -7,6 +7,7 @@ contract FreshSenseTraceability is AccessControl {
     bytes32 public constant EVIDENCE_WRITER_ROLE = keccak256("EVIDENCE_WRITER_ROLE");
 
     uint8 private constant LOT_REGISTERED = 1;
+    uint8 private constant CRITICAL_TEMPERATURE = 2;
     uint32 private constant SCHEMA_V1 = 1;
 
     struct Evidence {
@@ -54,7 +55,9 @@ contract FreshSenseTraceability is AccessControl {
         if (evidenceId == bytes16(0)) revert InvalidEvidenceId();
         if (lotId == bytes16(0)) revert InvalidLotId();
         if (digest == bytes32(0)) revert InvalidDigest();
-        if (eventType != LOT_REGISTERED) revert UnsupportedEventType(eventType);
+        if (eventType != LOT_REGISTERED && eventType != CRITICAL_TEMPERATURE) {
+            revert UnsupportedEventType(eventType);
+        }
         if (schemaVersion != SCHEMA_V1) revert UnsupportedSchemaVersion(schemaVersion);
         if (evidences[evidenceId].exists) revert EvidenceAlreadyRecorded(evidenceId);
 

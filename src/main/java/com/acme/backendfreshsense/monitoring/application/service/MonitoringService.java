@@ -56,6 +56,10 @@ public class MonitoringService {
         return repository.findLatestByUser(userId).map(this::toDto);
     }
 
+    Optional<MonitoringReadingDto> findReading(long id) {
+        return repository.findById(id).map(this::toDto);
+    }
+
     public List<MonitoringReadingDto> getAllByUser(Long userId) {
         return repository.findByUserId(userId).stream().map(this::toDto).toList();
     }

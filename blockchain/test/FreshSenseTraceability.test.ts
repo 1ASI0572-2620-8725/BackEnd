@@ -15,6 +15,7 @@ const nextLot = uuidToBytes16("7e056ed2-7c42-4ae4-a588-8ffe565a656a");
 const digest = hashSnapshot("evidencia de prueba");
 const changedDigest = hashSnapshot("evidencia de prueba alterada");
 const input = [evidenceId, lotId, digest, LOT_REGISTERED, SCHEMA_V1] as const;
+const CRITICAL_TEMPERATURE = 2;
 
 async function deployFixture() {
   const connection = await network.create("freshsenseLocal");
@@ -40,7 +41,7 @@ describe("FreshSenseTraceability", () => {
   beforeEach(async () => { fixture = await deployFixture(); });
   afterEach(async () => { await fixture?.connection.close(); });
 
-  async function record(args: typeof input = input) {
+  async function record(args: readonly [Hex, Hex, Hex, number, number] = input) {
     const transaction = await fixture.contract.write.recordEvidence(args, { account: fixture.writer.account });
     const receipt = await fixture.client.waitForTransactionReceipt({ hash: transaction });
     assert.equal(receipt.status, "success");
@@ -114,14 +115,39 @@ describe("FreshSenseTraceability", () => {
     ), "InvalidLotId");
   });
 
-  it("rechaza tipos y versiones fuera de LOT_REGISTERED v1", async () => {
+  it("rechaza tipos desconocidos y versiones fuera del esquema v1", async () => {
     const { contract, writer } = fixture;
     await reverts(contract.simulate.recordEvidence(
-      [evidenceId, lotId, digest, 0, SCHEMA_V1], { account: writer.account.address },
+      [evidenceId, lotId, digest, 3, SCHEMA_V1], { account: writer.account.address },
     ), "UnsupportedEventType");
     await reverts(contract.simulate.recordEvidence(
       [evidenceId, lotId, digest, LOT_REGISTERED, 2], { account: writer.account.address },
     ), "UnsupportedSchemaVersion");
+    await reverts(contract.simulate.recordEvidence(
+      [evidenceId, lotId, digest, CRITICAL_TEMPERATURE, 2], { account: writer.account.address },
+    ), "UnsupportedSchemaVersion");
+  });
+
+  it("registra y verifica CRITICAL_TEMPERATURE v1 junto a LOT_REGISTERED", async () => {
+    await record();
+    const criticalDigest = hashSnapshot('{"eventType":"CRITICAL_TEMPERATURE","temperatureC":"12.1"}');
+    const altered = hashSnapshot('{"eventType":"CRITICAL_TEMPERATURE","temperatureC":"13.1"}');
+    const incident = [nextEvidence, lotId, criticalDigest, CRITICAL_TEMPERATURE, SCHEMA_V1] as const;
+    const receipt = await record(incident);
+    const [log] = receipt.logs;
+    const event = decodeEventLog({ abi: fixture.contract.abi, data: log.data, topics: log.topics });
+    assert.equal(event.eventName, "EvidenceRecorded");
+    assert.deepEqual(event.args, {
+      evidenceId: nextEvidence, lotId, digest: criticalDigest, eventType: CRITICAL_TEMPERATURE, schemaVersion: SCHEMA_V1,
+    });
+    assert.deepEqual(await fixture.contract.read.verifyEvidence([nextEvidence, criticalDigest]), [true, true]);
+    assert.deepEqual(await fixture.contract.read.verifyEvidence([nextEvidence, altered]), [true, false]);
+    assert.deepEqual(await fixture.contract.read.verifyEvidence([evidenceId, digest]), [true, true]);
+    await reverts(fixture.contract.simulate.recordEvidence(incident, { account: fixture.writer.account.address }),
+      "EvidenceAlreadyRecorded");
+    await reverts(fixture.contract.simulate.recordEvidence(
+      [nextEvidence, lotId, altered, CRITICAL_TEMPERATURE, SCHEMA_V1], { account: fixture.writer.account.address },
+    ), "EvidenceAlreadyRecorded");
   });
 
   it("rechaza al administrador y a terceros cuando carecen del rol de escritura", async () => {

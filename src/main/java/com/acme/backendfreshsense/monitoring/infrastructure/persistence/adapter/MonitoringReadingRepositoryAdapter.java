@@ -23,6 +23,11 @@ public class MonitoringReadingRepositoryAdapter implements MonitoringReadingRepo
     }
 
     @Override
+    public Optional<MonitoringReading> findById(long id) {
+        return jpa.findById(id).map(this::toDomain);
+    }
+
+    @Override
     public Optional<MonitoringReading> findLatest() {
         return jpa.findTopByOrderByRecordedAtDesc().map(this::toDomain);
     }
