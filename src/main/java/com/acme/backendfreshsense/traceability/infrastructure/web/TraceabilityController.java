@@ -13,11 +13,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
-import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.net.URI;
@@ -74,10 +72,8 @@ public class TraceabilityController {
     }
 
     @PostMapping("/lots")
-    public ResponseEntity<FoodLot> register(
-            @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
-            @Valid @RequestBody RegisterLotRequest request) {
-        var lot = traceability.register(writeUser(authorization), request.productId(), request.code(),
+    public ResponseEntity<FoodLot> register(@Valid @RequestBody RegisterLotRequest request) {
+        var lot = traceability.register(CurrentUser.id(), request.productId(), request.code(),
                 request.initialQuantity(), request.unit(), request.receivedAt(), request.expiresOn());
         return ResponseEntity.created(URI.create("/api/traceability/lots/" + lot.id())).body(lot);
     }
@@ -95,16 +91,14 @@ public class TraceabilityController {
     @PostMapping("/lots/{lotId}/assignments")
     @ResponseStatus(HttpStatus.CREATED)
     public AssignmentResponse assign(@PathVariable String lotId,
-            @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
             @Valid @RequestBody AssignDeviceRequest request) {
-        return AssignmentResponse.from(traceability.assign(writeUser(authorization), UUID.fromString(lotId),
+        return AssignmentResponse.from(traceability.assign(CurrentUser.id(), UUID.fromString(lotId),
                 request.deviceId()));
     }
 
     @PostMapping("/lots/{lotId}/assignments/{assignmentId}/close")
-    public AssignmentResponse close(@PathVariable String lotId, @PathVariable String assignmentId,
-            @RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization) {
-        return AssignmentResponse.from(traceability.close(writeUser(authorization), UUID.fromString(lotId),
+    public AssignmentResponse close(@PathVariable String lotId, @PathVariable String assignmentId) {
+        return AssignmentResponse.from(traceability.close(CurrentUser.id(), UUID.fromString(lotId),
                 UUID.fromString(assignmentId)));
     }
 
@@ -136,11 +130,4 @@ public class TraceabilityController {
         return anchoring.owned(CurrentUser.id(), evidenceId);
     }
 
-    private static long writeUser(String authorization) {
-        // Selecciona el mismo tipo de credencial que JwtAuthFilter prioriza. Una cookie sola no autoriza escrituras.
-        if (authorization == null || !authorization.startsWith("Bearer ") || authorization.length() == 7) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Las escrituras de trazabilidad requieren JWT Bearer");
-        }
-        return CurrentUser.id();
-    }
 }

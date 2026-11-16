@@ -79,15 +79,8 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
         authCookie.setPath("/");
         authCookie.setMaxAge(15 * 60);
 
-        Cookie refreshCookie = new Cookie("refreshToken", refreshToken);
-        refreshCookie.setHttpOnly(true);
-        refreshCookie.setSecure(true);
-        refreshCookie.setAttribute("SameSite", "None");
-        refreshCookie.setPath("/api/accounts/refresh");
-        refreshCookie.setMaxAge(refreshDays * 24 * 3600);
-
         response.addCookie(authCookie);
-        response.addCookie(refreshCookie);
+        RefreshCookie.write(response, refreshToken, refreshDays * 24 * 3600);
 
         // Redirigir al frontend
         getRedirectStrategy().sendRedirect(request, response, frontendUrl + "/dashboard");

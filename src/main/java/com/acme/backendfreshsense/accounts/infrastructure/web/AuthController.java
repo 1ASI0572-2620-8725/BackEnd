@@ -16,6 +16,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.Cookie;
+import com.acme.backendfreshsense.shared.infrastructure.security.RefreshCookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -199,7 +200,7 @@ public class AuthController {
             accountService.revokeRefreshToken(refreshToken);
         }
         clearCookie(response, "authToken", "/");
-        clearCookie(response, "refreshToken", "/api/accounts/refresh");
+        RefreshCookie.clear(response);
         return ResponseEntity.noContent().build();
     }
 
@@ -275,13 +276,7 @@ public class AuthController {
     }
 
     private void setRefreshCookie(HttpServletResponse response, String token) {
-        Cookie cookie = new Cookie("refreshToken", token);
-        cookie.setHttpOnly(true);
-        cookie.setSecure(true);
-        cookie.setPath("/api/accounts/refresh");
-        cookie.setMaxAge(7 * 24 * 60 * 60);
-        cookie.setAttribute("SameSite", "None");
-        response.addCookie(cookie);
+        RefreshCookie.write(response, token, 7 * 24 * 60 * 60);
     }
 
     private void clearCookie(HttpServletResponse response, String name, String path) {

@@ -1,6 +1,7 @@
 package com.acme.backendfreshsense.accounts.application.dto;
 
 import com.acme.backendfreshsense.accounts.domain.model.Role;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 @Schema(description = "Datos del usuario autenticado")
@@ -38,5 +39,6 @@ public class UserResponse {
     public String getFullName()   { return fullName; }
     public Role getRole()         { return role; }
     public String getToken()      { return token; }
+    @JsonIgnore
     public String getRefreshToken() { return refreshToken; }
 }

@@ -1,6 +1,7 @@
 package com.acme.backendfreshsense.shared.infrastructure.security;
 
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -14,10 +15,12 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.net.URI;
 import java.util.List;
 
 @Configuration
@@ -29,6 +32,8 @@ public class SecurityConfig {
     private final RateLimitFilter rateLimitFilter;
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
     private final ClientRegistrationRepository clientRegistrationRepository;
+    @Value("${freshsense.cors.allowed-origins:https://front-end-fresh-sense.vercel.app,https://proud-rock-06bc9ad10.7.azurestaticapps.net,http://localhost:4200}")
+    private List<String> allowedOrigins;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
                           RateLimitFilter rateLimitFilter,
@@ -49,8 +54,10 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                // API browser writes use ApiCsrfFilter with exact CORS origins. OAuth2 uses its own state.
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
+                .logout(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST,
@@ -59,9 +66,7 @@ public class SecurityConfig {
                                 "/api/accounts/logout",
                                 "/api/accounts/refresh").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/billing/plans").permitAll()
-                        .requestMatchers(HttpMethod.POST, "/api/v1/sensor-readings").permitAll()
-                        // Edge/IoT: autenticación por X-Device-Key dentro del controller, no por JWT.
-                        .requestMatchers("/api/edge/**").permitAll()
+                        .requestMatchers(ApiCsrfFilter.DEVICE_WRITES).permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
                         .anyRequest().authenticated()
                 )
@@ -73,7 +78,8 @@ public class SecurityConfig {
                         })
                 )
                 .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(new ApiCsrfFilter(corsConfigurationSource()), AuthorizationFilter.class);
 
         if (clientRegistrationRepository != null) {
             http.oauth2Login(oauth -> oauth.successHandler(oAuth2SuccessHandler));
@@ -86,17 +92,24 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        config.setAllowedOrigins(List.of(
-                "https://front-end-fresh-sense.vercel.app",
-                "https://proud-rock-06bc9ad10.7.azurestaticapps.net",
-                "http://localhost:4200"
-        ));
+        config.setAllowedOrigins(allowedOrigins.stream().map(String::trim).map(SecurityConfig::exactOrigin).toList());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
+        config.setAllowedHeaders(List.of("Content-Type", "Authorization", ApiCsrfFilter.HEADER,
+                "X-Device-Key", "X-Device-Token", "Idempotency-Key", "X-Measurement-Clock"));
         config.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         return source;
+    }
+
+    private static String exactOrigin(String value) {
+        URI origin = URI.create(value);
+        if (origin.getHost() == null || origin.getRawUserInfo() != null || origin.getRawQuery() != null
+                || origin.getRawFragment() != null || !origin.getRawPath().isEmpty()
+                || !List.of("http", "https").contains(origin.getScheme())) {
+            throw new IllegalArgumentException("freshsense.cors.allowed-origins requiere orígenes HTTP(S) exactos");
+        }
+        return value;
     }
 }

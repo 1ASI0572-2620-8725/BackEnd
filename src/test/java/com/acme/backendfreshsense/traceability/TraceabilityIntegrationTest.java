@@ -13,9 +13,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.persistence.EntityManager;
 import jakarta.servlet.http.Cookie;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -26,8 +29,11 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -62,6 +68,10 @@ class TraceabilityIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired EntityManager entityManager;
     @Autowired TransactionTemplate transactions;
+    @Value("${authorization.jwt.secret}") String jwtSecret;
+
+    private static final String CSRF = "X-FreshSense-CSRF";
+    private static final String MARKER = "traceability";
     @MockitoSpyBean TraceabilityRepository records;
 
     private User owner;
@@ -110,6 +120,150 @@ class TraceabilityIntegrationTest {
                 .andExpect(status().isBadRequest());
         assign(outsider, id, device(outsider)).andExpect(status().isNotFound());
         close(outsider, id, assignmentId).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void authorizesCookieWritesOnlyWithTheCsrfHeaderAndAnAllowedBrowserOrigin() throws Exception {
+        String origin = "http://localhost:4200";
+        String csrf = "X-FreshSense-CSRF";
+        var cookie = new Cookie("authToken", owner.token());
+        mvc.perform(options(LOTS).header("Origin", "https://untrusted.example")
+                .header("Access-Control-Request-Method", "POST").header("Access-Control-Request-Headers", csrf))
+                .andExpect(status().isForbidden());
+        mvc.perform(options(LOTS).header("Origin", origin)
+                .header("Access-Control-Request-Method", "POST").header("Access-Control-Request-Headers", csrf))
+                .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", origin));
+        mvc.perform(post(LOTS).header(csrf, "traceability").contentType(APPLICATION_JSON)
+                .content(lotBody("NOSESSION", productId, "1"))).andExpect(status().isUnauthorized());
+        mvc.perform(post(LOTS).cookie(cookie).header("Origin", "https://untrusted.example").header(csrf, "traceability")
+                .contentType(APPLICATION_JSON).content(lotBody("FORGED", productId, "1"))).andExpect(status().isForbidden());
+        var lot = response(mvc.perform(post(LOTS).cookie(cookie).header("Origin", origin).header(csrf, "traceability")
+                .contentType(APPLICATION_JSON).content(lotBody("BROWSER", productId, "1"))), 201);
+        String path = LOTS + "/" + lot.path("id").asText() + "/assignments";
+        String body = json.writeValueAsString(Map.of("deviceId", device(owner)));
+        mvc.perform(post(path).cookie(cookie).contentType(APPLICATION_JSON).content(body)).andExpect(status().isForbidden());
+        var assignment = response(mvc.perform(post(path).cookie(cookie).header("Origin", origin).header(csrf, "traceability")
+                .contentType(APPLICATION_JSON).content(body)), 201);
+        String closePath = path + "/" + assignment.path("id").asText() + "/close";
+        mvc.perform(post(closePath).cookie(cookie)).andExpect(status().isForbidden());
+        mvc.perform(post(closePath).cookie(new Cookie("authToken", outsider.token())).header(csrf, "traceability"))
+                .andExpect(status().isNotFound());
+        mvc.perform(post(closePath).cookie(cookie).header("Origin", origin).header(csrf, "traceability"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.status").value("CLOSED"));
+    }
+
+    @Test
+    void keepsRefreshInHttpOnlyCookiesAndRevokesTheRenewedTokenOnLogout() throws Exception {
+        var params = Map.of("email", "session-" + UUID.randomUUID() + "@example.test", "password", "Lab9-" + UUID.randomUUID());
+        mvc.perform(post("/api/accounts/register").contentType(APPLICATION_JSON).content(json.writeValueAsBytes(Map.of(
+                "email", params.get("email"), "password", params.get("password"), "fullName", "Sesión Laboratorio"))))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.refreshToken").doesNotHaveJsonPath());
+        var login = mvc.perform(post("/api/accounts/login").contentType(APPLICATION_JSON).content(json.writeValueAsBytes(params)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.refreshToken").doesNotHaveJsonPath())
+                .andReturn().getResponse();
+        var cookie = activeRefresh(login.getCookies());
+        assertThat(cookie.isHttpOnly()).isTrue();
+        assertThat(cookie.getSecure()).isTrue();
+        assertThat(cookie.getPath()).isEqualTo("/api/accounts");
+        mvc.perform(post("/api/accounts/refresh").cookie(cookie)).andExpect(status().isForbidden());
+        mvc.perform(post("/api/accounts/logout").cookie(cookie).header(CSRF, "wrong")).andExpect(status().isForbidden());
+        mvc.perform(post("/api/accounts/logout").cookie(cookie).header("Origin", "null").header(CSRF, MARKER))
+                .andExpect(status().isForbidden());
+        mvc.perform(post("/api/accounts/logout").cookie(cookie).header("Origin", "https://intruso.example")
+                .header(CSRF, MARKER).with(request -> {
+                    request.setScheme("https");
+                    request.setServerName("intruso.example");
+                    request.setServerPort(443);
+                    return request;
+                })).andExpect(status().isForbidden());
+        mvc.perform(post("/api/accounts/logout").cookie(cookie).header(AUTHORIZATION, owner.bearer()))
+                .andExpect(status().isForbidden());
+        var renewed = mvc.perform(post("/api/accounts/refresh").cookie(cookie).header(CSRF, MARKER))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.refreshToken").doesNotHaveJsonPath())
+                .andReturn().getResponse();
+        var rotated = activeRefresh(renewed.getCookies());
+        assertThat(rotated.getValue()).isNotEqualTo(cookie.getValue());
+        mvc.perform(post("/api/accounts/logout").cookie(rotated).header(CSRF, MARKER)).andExpect(status().isNoContent());
+        mvc.perform(post("/api/accounts/refresh").cookie(rotated).header(CSRF, MARKER)).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void coversCookieWritesOutsideTraceabilityAndPreservesAuthenticatedBearerClients() throws Exception {
+        var cookie = new Cookie("authToken", owner.token());
+        for (var write : List.of(
+                post("/api/products"), patch("/api/products/" + productId), delete("/api/products/" + productId),
+                post("/api/monitoring"), post("/api/devices"), post("/api/alerts"), put("/api/alerts/1"),
+                post("/api/recipes/generate-batch"), post("/api/recipes"),
+                post("/api/history"), put("/api/accounts/me"), post("/api/accounts/change-password"),
+                post("/api/billing/subscribe"), delete("/api/billing/cancel"),
+                post("/api/notifications/send"), patch("/api/notifications/1/read"), put("/api/notifications/preferences"))) {
+            mvc.perform(write.cookie(cookie)).andExpect(status().isForbidden());
+        }
+        mvc.perform(patch("/api/products/" + productId).cookie(cookie).header(CSRF, "unknown")
+                .contentType(APPLICATION_JSON).content("{\"quantity\":20}")).andExpect(status().isForbidden());
+        mvc.perform(patch("/api/products/" + productId).cookie(cookie).header(CSRF, MARKER, MARKER)
+                .contentType(APPLICATION_JSON).content("{\"quantity\":20}")).andExpect(status().isForbidden());
+        mvc.perform(patch("/api/products/" + productId).cookie(cookie).header(CSRF, MARKER).header("Origin", "null")
+                .contentType(APPLICATION_JSON).content("{\"quantity\":20}")).andExpect(status().isForbidden());
+        mvc.perform(patch("/api/products/" + productId).cookie(cookie).header(AUTHORIZATION, "Bearer invalid")
+                .contentType(APPLICATION_JSON).content("{\"quantity\":20}")).andExpect(status().isUnauthorized());
+        mvc.perform(patch("/api/products/" + productId).header(AUTHORIZATION, owner.bearer())
+                .contentType(APPLICATION_JSON).content("{\"quantity\":20}")).andExpect(status().isOk());
+        mvc.perform(patch("/api/products/" + productId).cookie(cookie).header(CSRF, MARKER)
+                .contentType(APPLICATION_JSON).content("{\"quantity\":21}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.quantity").value(21));
+    }
+
+    @Test
+    void appliesExactCorsHeadersAndRejectsSimpleCredentialRequests() throws Exception {
+        for (String path : List.of("/api/accounts/register", "/api/accounts/login")) {
+            for (String media : List.of("text/plain", "application/x-www-form-urlencoded", "multipart/form-data")) {
+                mvc.perform(post(path).contentType(media).content("{}")).andExpect(status().isUnsupportedMediaType());
+            }
+            mvc.perform(post(path).header("Origin", "https://attacker.example").contentType(APPLICATION_JSON).content("{}"))
+                    .andExpect(status().isForbidden()).andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+        }
+        mvc.perform(options("/api/products/1").header("Origin", "http://localhost:4200")
+                        .header("Access-Control-Request-Method", "PATCH")
+                        .header("Access-Control-Request-Headers", "content-type,x-freshsense-csrf"))
+                .andExpect(status().isOk()).andExpect(header().string("Access-Control-Allow-Origin", "http://localhost:4200"));
+        mvc.perform(options("/api/products/1").header("Origin", "http://localhost:4200")
+                        .header("Access-Control-Request-Method", "PATCH")
+                        .header("Access-Control-Request-Headers", "x-forwarded-host,x-freshsense-csrf"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Access-Control-Allow-Headers", "x-freshsense-csrf"));
+        mvc.perform(options("/api/products/1").header("Origin", "http://localhost:4200")
+                        .header("Access-Control-Request-Method", "PATCH")
+                        .header("Access-Control-Request-Headers", "x-forwarded-host"))
+                .andExpect(status().isForbidden());
+        mvc.perform(options("/api/products/1").header("Origin", "https://front-end-fresh-sense.vercel.app.evil.example")
+                        .header("Access-Control-Request-Method", "PATCH").header("Access-Control-Request-Headers", CSRF))
+                .andExpect(status().isForbidden()).andExpect(header().doesNotExist("Access-Control-Allow-Origin"));
+        mvc.perform(get("/logout").cookie(new Cookie("authToken", owner.token())))
+                .andExpect(result -> assertThat(result.getResponse().getRedirectedUrl()).isNull())
+                .andExpect(header().doesNotExist("Set-Cookie"));
+    }
+
+    @Test
+    void rejectsExpiredCookiesEvenWhenTheCsrfMarkerIsPresent() throws Exception {
+        var expires = Date.from(Instant.now().minusSeconds(60));
+        var signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        var expiredAccess = Jwts.builder().subject("expired@example.test")
+                .claims(Map.of("userId", owner.id(), "type", "access", "role", "USER_STANDARD"))
+                .expiration(expires).signWith(signingKey).compact();
+        var expiredRefresh = Jwts.builder().subject("expired@example.test")
+                .claims(Map.of("userId", owner.id(), "type", "refresh"))
+                .expiration(expires).signWith(signingKey).compact();
+        mvc.perform(post(LOTS).cookie(new Cookie("authToken", expiredAccess)).header(CSRF, MARKER)
+                .contentType(APPLICATION_JSON).content(lotBody("EXPIRED", productId, "1")))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/accounts/refresh").cookie(new Cookie("refreshToken", expiredRefresh)).header(CSRF, MARKER))
+                .andExpect(status().isBadRequest()).andExpect(header().doesNotExist("Set-Cookie"));
+    }
+
+    private static Cookie activeRefresh(Cookie[] cookies) {
+        return Arrays.stream(cookies).filter(cookie -> "refreshToken".equals(cookie.getName()) && cookie.getMaxAge() > 0)
+                .findFirst().orElseThrow();
     }
 
     @Test

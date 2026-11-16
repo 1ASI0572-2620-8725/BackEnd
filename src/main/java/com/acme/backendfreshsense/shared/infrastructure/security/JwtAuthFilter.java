@@ -17,6 +17,7 @@ import java.util.List;
 
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
+    private static final String AUTHENTICATED_BEARER = JwtAuthFilter.class.getName() + ".authenticatedBearer";
 
     private final JwtService jwtService;
 
@@ -30,6 +31,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
 
         String token = extractTokenFromHeader(request);
+        boolean bearer = token != null;
 
         if (token == null) {
             token = extractTokenFromCookie(request);
@@ -45,9 +47,14 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                     email, null, List.of(new SimpleGrantedAuthority(grantedRole)));
             auth.setDetails(userId);
             SecurityContextHolder.getContext().setAuthentication(auth);
+            if (bearer) request.setAttribute(AUTHENTICATED_BEARER, true);
         }
 
         chain.doFilter(request, response);
+    }
+
+    static boolean hasAuthenticatedBearer(HttpServletRequest request) {
+        return Boolean.TRUE.equals(request.getAttribute(AUTHENTICATED_BEARER));
     }
 
     private String extractTokenFromHeader(HttpServletRequest request) {
